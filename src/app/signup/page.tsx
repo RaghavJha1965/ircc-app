@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,6 +28,13 @@ export default function SignupPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [error, setError] = useState("")
+
+  // Redirect if already logged in
+  useEffect(() => {
+    fetch("/api/auth/me").then((res) => {
+      if (res.ok) router.push("/")
+    })
+  }, [router])
   const [loading, setLoading] = useState(false)
 
   // Step 1: Account

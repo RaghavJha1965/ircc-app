@@ -52,17 +52,18 @@ export async function GET() {
     }
 
     // Group by category
-    const grouped = documents.reduce((acc: Record<string, typeof documents>, doc: (typeof documents)[number]) => {
-      if (!acc[doc.category]) {
-        acc[doc.category] = []
+    type Doc = (typeof documents)[number]
+    const grouped: Record<string, Doc[]> = {}
+    for (const doc of documents) {
+      if (!grouped[doc.category]) {
+        grouped[doc.category] = []
       }
-      acc[doc.category].push(doc)
-      return acc
-    }, {} as Record<string, typeof documents>)
+      grouped[doc.category].push(doc)
+    }
 
     // Calculate completion stats
     const total = documents.length
-    const completed = documents.filter((d) => d.isCompleted).length
+    const completed = documents.filter((d: Doc) => d.isCompleted).length
     const percentage = total > 0 ? Math.round((completed / total) * 100) : 0
 
     return NextResponse.json({

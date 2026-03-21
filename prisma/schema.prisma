@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// Express Entry Draws
+model Draw {
+  id             String   @id @default(cuid())
+  drawNumber     Int      @unique
+  drawDate       DateTime
+  drawName       String   // e.g., "No program specified", "Canadian Experience Class", etc.
+  crsScore       Int
+  itasIssued     Int
+  tieBreakDate   DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// Provincial Nominee Program Draws
+model PnpDraw {
+  id           String   @id @default(cuid())
+  province     String   // ON, BC, AB, etc.
+  stream       String   // e.g., "Human Capital Priorities", "Tech Draw"
+  drawDate     DateTime
+  minScore     Int?
+  itasIssued   Int?
+  nocCodes     String?  // Comma-separated NOC codes if applicable
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// IRCC News and Updates
+model News {
+  id          String   @id @default(cuid())
+  title       String
+  summary     String?
+  url         String
+  publishDate DateTime
+  category    String?  // processing-times, policy-change, draw-announcement
+  createdAt   DateTime @default(now())
+}
+
+// Document Checklist Items
+model Document {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   // education, language, work, identity, police-medical
+  description String?
+  isCompleted Boolean  @default(false)
+  dueDate     DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// User Settings (single user, no auth)
+model Settings {
+  id                   String  @id @default("default")
+  telegramBotToken     String?
+  telegramChatId       String?
+  emailAddress         String?
+  crsAlertThreshold    Int     @default(500)
+  enableTelegram       Boolean @default(false)
+  enableEmail          Boolean @default(false)
+  enableDrawAlerts     Boolean @default(true)
+  enablePnpAlerts      Boolean @default(true)
+  enableNewsAlerts     Boolean @default(false)
+}
+
+// CRS Profile (saved user profile for calculations)
+model CrsProfile {
+  id                    String  @id @default("default")
+  // Core Human Capital Factors
+  age                   Int     @default(25)
+  educationLevel        String  @default("bachelors")
+  firstLanguageTest     String  @default("ielts")
+  firstLanguageScores   String  @default("{}") // JSON: {reading: 8, writing: 7, listening: 8, speaking: 7}
+  secondLanguageScores  String? // JSON format
+  canadianWorkYears     Int     @default(0)
+  foreignWorkYears      Int     @default(0)
+  // Spouse Factors
+  hasSpouse             Boolean @default(false)
+  spouseEducation       String?
+  spouseLanguageScores  String? // JSON
+  spouseCanadianWork    Int     @default(0)
+  // Additional Points
+  provincialNomination  Boolean @default(false)
+  jobOffer              String? // "00", "0ab", "other", null
+  canadianEducation     String? // "1-2years", "3+years", null
+  frenchAbility         String? // "clb7+", "clb7+withEnglish5+", null
+  sibling               Boolean @default(false)
+  // Program eligibility fields
+  nocCode               String?
+  nocTeerCategory       String?  // 0, 1, 2, 3, 4, 5
+  preferredProvinces    String?  // JSON array e.g. ["ON","BC"]
+  // Important dates for timeline tracking
+  ieltsTestDate         DateTime?
+  medicalExamDate       DateTime?
+  policeClearanceDate   DateTime?
+  ecaIssueDate          DateTime?
+  irccProfileCreatedDate DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+// Processing Times Cache
+model ProcessingTime {
+  id            String   @id @default(cuid())
+  programName   String   @unique
+  processingDays Int
+  lastUpdated   DateTime
+  createdAt     DateTime @default(now())
+}

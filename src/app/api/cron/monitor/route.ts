@@ -4,19 +4,16 @@ import { scrapeExpressEntryDraws } from "@/lib/scraper"
 import { notifyNewDraw, notifyCrsThreshold } from "@/lib/telegram"
 import { emailNotifyNewDraw, emailNotifyCrsThreshold } from "@/lib/email"
 import { calculateCRS, type CrsProfile } from "@/lib/crs-calculator"
-
-// This endpoint is called by Vercel Cron Jobs
-// Configure in vercel.json to run every hour
+import { generateRecommendations } from "@/lib/recommendations"
+import { sendDigestEmail } from "@/lib/digest"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret to prevent unauthorized access
   const authHeader = request.headers.get("authorization")
   const cronSecret = process.env.CRON_SECRET
 
-  // Skip auth check in development
   if (process.env.NODE_ENV === "production" && cronSecret) {
     if (authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -26,7 +23,7 @@ export async function GET(request: NextRequest) {
   try {
     console.log("[CRON] Starting Express Entry monitor...")
 
-    // 1. Scrape latest draws from IRCC
+    // 1. Scrape latest draws
     const scrapedDraws = await scrapeExpressEntryDraws()
 
     if (scrapedDraws.length === 0) {
@@ -34,25 +31,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ message: "No draws found", newDraws: 0 })
     }
 
-    // 2. Get existing draw numbers from database
+    // 2. Find new draws
     const existingDraws = await prisma.draw.findMany({
       select: { drawNumber: true },
     })
     const existingDrawNumbers = new Set(existingDraws.map((d: { drawNumber: number }) => d.drawNumber))
 
-    // 3. Find new draws that don't exist in database
     const newDraws = scrapedDraws.filter(
       (draw) => !existingDrawNumbers.has(draw.drawNumber)
     )
 
-    if (newDraws.length === 0) {
-      console.log("[CRON] No new draws detected")
-      return NextResponse.json({ message: "No new draws", newDraws: 0 })
-    }
-
-    console.log(`[CRON] Found ${newDraws.length} new draw(s)`)
-
-    // 4. Save new draws to database
+    // 3. Save new draws
     for (const draw of newDraws) {
       await prisma.draw.create({
         data: {
@@ -66,105 +55,96 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // 5. Get settings for notifications
-    const settings = await prisma.settings.findUnique({
-      where: { id: "default" },
+    const notificationResults: Array<{ type: string; success: boolean; userId?: string }> = []
+
+    // 4. Send notifications to ALL users
+    const users = await prisma.user.findMany({
+      include: { settings: true, profile: true },
     })
 
-    // 6. Send notifications for each new draw
-    const notificationResults = []
+    for (const user of users) {
+      const settings = user.settings
+      const profileData = user.profile
+      if (!settings || !profileData) continue
 
-    for (const draw of newDraws) {
-      // Telegram notification
-      if (settings?.enableTelegram && settings?.telegramBotToken && settings?.telegramChatId) {
-        const telegramResult = await notifyNewDraw(
-          {
-            botToken: settings.telegramBotToken,
-            chatId: settings.telegramChatId,
-          },
-          draw
-        )
-        notificationResults.push({ type: "telegram", success: telegramResult })
+      // Build CRS profile
+      const firstLanguageScores = JSON.parse(profileData.firstLanguageScores || '{"reading":6,"writing":6,"listening":6,"speaking":6}')
+      const secondLanguageScores = profileData.secondLanguageScores ? JSON.parse(profileData.secondLanguageScores) : undefined
+      const spouseLanguageScores = profileData.spouseLanguageScores ? JSON.parse(profileData.spouseLanguageScores) : undefined
+
+      const crsProfile: CrsProfile = {
+        age: profileData.age,
+        educationLevel: profileData.educationLevel,
+        firstLanguageScores,
+        secondLanguageScores,
+        canadianWorkYears: profileData.canadianWorkYears,
+        foreignWorkYears: profileData.foreignWorkYears,
+        hasSpouse: profileData.hasSpouse,
+        spouseEducation: profileData.spouseEducation || undefined,
+        spouseLanguageScores,
+        spouseCanadianWork: profileData.spouseCanadianWork,
+        provincialNomination: profileData.provincialNomination,
+        jobOffer: profileData.jobOffer || undefined,
+        canadianEducation: profileData.canadianEducation || undefined,
+        frenchAbility: profileData.frenchAbility || undefined,
+        sibling: profileData.sibling,
       }
 
-      // Email notification
-      if (settings?.enableEmail && settings?.emailAddress) {
-        const emailResult = await emailNotifyNewDraw(
-          { to: settings.emailAddress },
-          draw
-        )
-        notificationResults.push({ type: "email", success: emailResult })
-      }
-    }
+      const breakdown = calculateCRS(crsProfile)
+      const yourCrs = breakdown.total
+      const recommendations = generateRecommendations(crsProfile, breakdown)
 
-    // 7. Send CRS threshold alerts
-    if (settings?.enableDrawAlerts) {
-      try {
-        const crsProfileData = await prisma.crsProfile.findUnique({
-          where: { id: "default" },
+      // Send new draw alerts
+      for (const draw of newDraws) {
+        if (settings.enableTelegram && settings.telegramBotToken && settings.telegramChatId) {
+          const r1 = await notifyNewDraw(
+            { botToken: settings.telegramBotToken, chatId: settings.telegramChatId },
+            draw
+          )
+          notificationResults.push({ type: "telegram-draw", success: r1, userId: user.id })
+
+          const r2 = await notifyCrsThreshold(
+            { botToken: settings.telegramBotToken, chatId: settings.telegramChatId },
+            draw,
+            yourCrs
+          )
+          notificationResults.push({ type: "telegram-crs", success: r2, userId: user.id })
+        }
+
+        if (settings.enableEmail && settings.emailAddress) {
+          const r1 = await emailNotifyNewDraw({ to: settings.emailAddress }, draw)
+          notificationResults.push({ type: "email-draw", success: r1, userId: user.id })
+
+          const r2 = await emailNotifyCrsThreshold({ to: settings.emailAddress }, draw, yourCrs)
+          notificationResults.push({ type: "email-crs", success: r2, userId: user.id })
+        }
+      }
+
+      // Send bi-weekly digest email (only if email enabled)
+      if (settings.enableEmail && settings.emailAddress) {
+        // Get recent draws for digest
+        const recentDraws = await prisma.draw.findMany({
+          orderBy: { drawDate: "desc" },
+          take: 5,
         })
 
-        if (crsProfileData) {
-          const firstLanguageScores = JSON.parse(crsProfileData.firstLanguageScores || '{"reading":6,"writing":6,"listening":6,"speaking":6}')
-          const secondLanguageScores = crsProfileData.secondLanguageScores ? JSON.parse(crsProfileData.secondLanguageScores) : undefined
-          const spouseLanguageScores = crsProfileData.spouseLanguageScores ? JSON.parse(crsProfileData.spouseLanguageScores) : undefined
-
-          const crsProfile: CrsProfile = {
-            age: crsProfileData.age,
-            educationLevel: crsProfileData.educationLevel,
-            firstLanguageScores,
-            secondLanguageScores,
-            canadianWorkYears: crsProfileData.canadianWorkYears,
-            foreignWorkYears: crsProfileData.foreignWorkYears,
-            hasSpouse: crsProfileData.hasSpouse,
-            spouseEducation: crsProfileData.spouseEducation || undefined,
-            spouseLanguageScores,
-            spouseCanadianWork: crsProfileData.spouseCanadianWork,
-            provincialNomination: crsProfileData.provincialNomination,
-            jobOffer: crsProfileData.jobOffer || undefined,
-            canadianEducation: crsProfileData.canadianEducation || undefined,
-            frenchAbility: crsProfileData.frenchAbility || undefined,
-            sibling: crsProfileData.sibling,
-          }
-
-          const breakdown = calculateCRS(crsProfile)
-          const yourCrs = breakdown.total
-
-          for (const draw of newDraws) {
-            if (settings.enableTelegram && settings.telegramBotToken && settings.telegramChatId) {
-              const result = await notifyCrsThreshold(
-                { botToken: settings.telegramBotToken, chatId: settings.telegramChatId },
-                draw,
-                yourCrs
-              )
-              notificationResults.push({ type: "telegram-crs", success: result })
-            }
-
-            if (settings.enableEmail && settings.emailAddress) {
-              const result = await emailNotifyCrsThreshold(
-                { to: settings.emailAddress },
-                draw,
-                yourCrs
-              )
-              notificationResults.push({ type: "email-crs", success: result })
-            }
-          }
-        }
-      } catch (crsError) {
-        console.error("[CRON] Error sending CRS threshold alerts:", crsError)
+        const digestResult = await sendDigestEmail(
+          { to: settings.emailAddress },
+          user.name,
+          yourCrs,
+          recommendations.slice(0, 3),
+          recentDraws
+        )
+        notificationResults.push({ type: "email-digest", success: digestResult, userId: user.id })
       }
     }
 
-    console.log(`[CRON] Saved ${newDraws.length} new draw(s) and sent notifications`)
+    console.log(`[CRON] Processed ${newDraws.length} new draw(s), notified ${users.length} user(s)`)
 
     return NextResponse.json({
       message: "Monitoring complete",
       newDraws: newDraws.length,
-      draws: newDraws.map((d) => ({
-        number: d.drawNumber,
-        crs: d.crsScore,
-        date: d.drawDate,
-      })),
+      usersNotified: users.length,
       notifications: notificationResults,
     })
   } catch (error) {

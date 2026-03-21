@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Geist, Geist_Mono } from "next/font/google"
 import Link from "next/link"
+import { getSession } from "@/lib/auth"
 import "./globals.css"
 
 const geistSans = Geist({
@@ -18,11 +19,13 @@ export const metadata: Metadata = {
   description: "Track Express Entry draws, calculate your CRS score, and get notified about new immigration updates for Canadian PR.",
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const session = await getSession()
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-background`}>
@@ -36,36 +39,39 @@ export default function RootLayout({
                 </Link>
               </div>
               <div className="flex items-center gap-6">
-                <Link
-                  href="/"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/calculator"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  CRS Calculator
-                </Link>
-                <Link
-                  href="/eligibility"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Eligibility
-                </Link>
-                <Link
-                  href="/checklist"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Documents
-                </Link>
-                <Link
-                  href="/settings"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  Settings
-                </Link>
+                {session ? (
+                  <>
+                    <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
+                      Dashboard
+                    </Link>
+                    <Link href="/calculator" className="text-muted-foreground hover:text-foreground transition-colors">
+                      CRS Calculator
+                    </Link>
+                    <Link href="/eligibility" className="text-muted-foreground hover:text-foreground transition-colors">
+                      Eligibility
+                    </Link>
+                    <Link href="/checklist" className="text-muted-foreground hover:text-foreground transition-colors">
+                      Documents
+                    </Link>
+                    <Link href="/settings" className="text-muted-foreground hover:text-foreground transition-colors">
+                      Settings
+                    </Link>
+                    <span className="text-sm text-muted-foreground">{session.name}</span>
+                    <LogoutButton />
+                  </>
+                ) : (
+                  <>
+                    <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
+                      Sign In
+                    </Link>
+                    <Link
+                      href="/signup"
+                      className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+                    >
+                      Sign Up
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -75,5 +81,26 @@ export default function RootLayout({
         </main>
       </body>
     </html>
+  )
+}
+
+function LogoutButton() {
+  return (
+    <form
+      action={async () => {
+        "use server"
+        const { destroySession } = await import("@/lib/auth")
+        await destroySession()
+        const { redirect } = await import("next/navigation")
+        redirect("/login")
+      }}
+    >
+      <button
+        type="submit"
+        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Logout
+      </button>
+    </form>
   )
 }

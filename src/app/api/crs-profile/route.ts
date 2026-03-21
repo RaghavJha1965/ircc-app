@@ -2,50 +2,71 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { calculateCRS, type CrsProfile } from "@/lib/crs-calculator"
 import { generateRecommendations } from "@/lib/recommendations"
+import { getSession } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
-// GET /api/crs-profile - Get saved CRS profile and calculate score
+function buildCrsProfile(profile: {
+  age: number
+  educationLevel: string
+  firstLanguageScores: string
+  secondLanguageScores: string | null
+  canadianWorkYears: number
+  foreignWorkYears: number
+  hasSpouse: boolean
+  spouseEducation: string | null
+  spouseLanguageScores: string | null
+  spouseCanadianWork: number
+  provincialNomination: boolean
+  jobOffer: string | null
+  canadianEducation: string | null
+  frenchAbility: string | null
+  sibling: boolean
+}) {
+  const firstLanguageScores = JSON.parse(profile.firstLanguageScores || '{"reading":6,"writing":6,"listening":6,"speaking":6}')
+  const secondLanguageScores = profile.secondLanguageScores ? JSON.parse(profile.secondLanguageScores) : undefined
+  const spouseLanguageScores = profile.spouseLanguageScores ? JSON.parse(profile.spouseLanguageScores) : undefined
+
+  const crsProfile: CrsProfile = {
+    age: profile.age,
+    educationLevel: profile.educationLevel,
+    firstLanguageScores,
+    secondLanguageScores,
+    canadianWorkYears: profile.canadianWorkYears,
+    foreignWorkYears: profile.foreignWorkYears,
+    hasSpouse: profile.hasSpouse,
+    spouseEducation: profile.spouseEducation || undefined,
+    spouseLanguageScores,
+    spouseCanadianWork: profile.spouseCanadianWork,
+    provincialNomination: profile.provincialNomination,
+    jobOffer: profile.jobOffer || undefined,
+    canadianEducation: profile.canadianEducation || undefined,
+    frenchAbility: profile.frenchAbility || undefined,
+    sibling: profile.sibling,
+  }
+
+  return { crsProfile, firstLanguageScores, secondLanguageScores, spouseLanguageScores }
+}
+
 export async function GET() {
   try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     let profile = await prisma.crsProfile.findUnique({
-      where: { id: "default" },
+      where: { userId: session.id },
     })
 
     if (!profile) {
-      // Create default profile
       profile = await prisma.crsProfile.create({
-        data: { id: "default" },
+        data: { userId: session.id },
       })
     }
 
-    // Parse JSON fields
-    const firstLanguageScores = JSON.parse(profile.firstLanguageScores || '{"reading":6,"writing":6,"listening":6,"speaking":6}')
-    const secondLanguageScores = profile.secondLanguageScores ? JSON.parse(profile.secondLanguageScores) : undefined
-    const spouseLanguageScores = profile.spouseLanguageScores ? JSON.parse(profile.spouseLanguageScores) : undefined
-
-    // Build CRS profile object
-    const crsProfile: CrsProfile = {
-      age: profile.age,
-      educationLevel: profile.educationLevel,
-      firstLanguageScores,
-      secondLanguageScores,
-      canadianWorkYears: profile.canadianWorkYears,
-      foreignWorkYears: profile.foreignWorkYears,
-      hasSpouse: profile.hasSpouse,
-      spouseEducation: profile.spouseEducation || undefined,
-      spouseLanguageScores,
-      spouseCanadianWork: profile.spouseCanadianWork,
-      provincialNomination: profile.provincialNomination,
-      jobOffer: profile.jobOffer || undefined,
-      canadianEducation: profile.canadianEducation || undefined,
-      frenchAbility: profile.frenchAbility || undefined,
-      sibling: profile.sibling,
-    }
-
-    // Calculate CRS score
+    const { crsProfile, firstLanguageScores, secondLanguageScores, spouseLanguageScores } = buildCrsProfile(profile)
     const breakdown = calculateCRS(crsProfile)
-
     const recommendations = generateRecommendations(crsProfile, breakdown)
 
     return NextResponse.json({
@@ -69,11 +90,14 @@ export async function GET() {
   }
 }
 
-// POST /api/crs-profile - Save CRS profile
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
+    const body = await request.json()
     const updateData: Record<string, unknown> = {}
 
     if (body.age !== undefined) updateData.age = body.age
@@ -110,37 +134,15 @@ export async function POST(request: NextRequest) {
     if (body.irccProfileCreatedDate !== undefined) updateData.irccProfileCreatedDate = body.irccProfileCreatedDate ? new Date(body.irccProfileCreatedDate) : null
 
     const profile = await prisma.crsProfile.upsert({
-      where: { id: "default" },
+      where: { userId: session.id },
       update: updateData,
       create: {
-        id: "default",
+        userId: session.id,
         ...updateData,
       },
     })
 
-    // Calculate new score
-    const firstLanguageScores = JSON.parse(profile.firstLanguageScores || '{"reading":6,"writing":6,"listening":6,"speaking":6}')
-    const secondLanguageScores = profile.secondLanguageScores ? JSON.parse(profile.secondLanguageScores) : undefined
-    const spouseLanguageScores = profile.spouseLanguageScores ? JSON.parse(profile.spouseLanguageScores) : undefined
-
-    const crsProfile: CrsProfile = {
-      age: profile.age,
-      educationLevel: profile.educationLevel,
-      firstLanguageScores,
-      secondLanguageScores,
-      canadianWorkYears: profile.canadianWorkYears,
-      foreignWorkYears: profile.foreignWorkYears,
-      hasSpouse: profile.hasSpouse,
-      spouseEducation: profile.spouseEducation || undefined,
-      spouseLanguageScores,
-      spouseCanadianWork: profile.spouseCanadianWork,
-      provincialNomination: profile.provincialNomination,
-      jobOffer: profile.jobOffer || undefined,
-      canadianEducation: profile.canadianEducation || undefined,
-      frenchAbility: profile.frenchAbility || undefined,
-      sibling: profile.sibling,
-    }
-
+    const { crsProfile } = buildCrsProfile(profile)
     const breakdown = calculateCRS(crsProfile)
 
     return NextResponse.json({

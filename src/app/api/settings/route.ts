@@ -1,23 +1,26 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { getSession } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
-// GET /api/settings - Get current settings
 export async function GET() {
   try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     let settings = await prisma.settings.findUnique({
-      where: { id: "default" },
+      where: { userId: session.id },
     })
 
-    // Create default settings if not exists
     if (!settings) {
       settings = await prisma.settings.create({
-        data: { id: "default" },
+        data: { userId: session.id, emailAddress: session.email, enableEmail: true },
       })
     }
 
-    // Don't expose sensitive tokens in response
     return NextResponse.json({
       telegramConfigured: !!settings.telegramBotToken && !!settings.telegramChatId,
       emailConfigured: !!settings.emailAddress,
@@ -30,56 +33,34 @@ export async function GET() {
     })
   } catch (error) {
     console.error("Error fetching settings:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch settings" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to fetch settings" }, { status: 500 })
   }
 }
 
-// POST /api/settings - Update settings
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
 
+    const body = await request.json()
     const updateData: Record<string, unknown> = {}
 
-    // Only update fields that are provided
-    if (body.telegramBotToken !== undefined) {
-      updateData.telegramBotToken = body.telegramBotToken
-    }
-    if (body.telegramChatId !== undefined) {
-      updateData.telegramChatId = body.telegramChatId
-    }
-    if (body.emailAddress !== undefined) {
-      updateData.emailAddress = body.emailAddress
-    }
-    if (body.crsAlertThreshold !== undefined) {
-      updateData.crsAlertThreshold = parseInt(body.crsAlertThreshold, 10)
-    }
-    if (body.enableTelegram !== undefined) {
-      updateData.enableTelegram = body.enableTelegram
-    }
-    if (body.enableEmail !== undefined) {
-      updateData.enableEmail = body.enableEmail
-    }
-    if (body.enableDrawAlerts !== undefined) {
-      updateData.enableDrawAlerts = body.enableDrawAlerts
-    }
-    if (body.enablePnpAlerts !== undefined) {
-      updateData.enablePnpAlerts = body.enablePnpAlerts
-    }
-    if (body.enableNewsAlerts !== undefined) {
-      updateData.enableNewsAlerts = body.enableNewsAlerts
-    }
+    if (body.telegramBotToken !== undefined) updateData.telegramBotToken = body.telegramBotToken
+    if (body.telegramChatId !== undefined) updateData.telegramChatId = body.telegramChatId
+    if (body.emailAddress !== undefined) updateData.emailAddress = body.emailAddress
+    if (body.crsAlertThreshold !== undefined) updateData.crsAlertThreshold = parseInt(body.crsAlertThreshold, 10)
+    if (body.enableTelegram !== undefined) updateData.enableTelegram = body.enableTelegram
+    if (body.enableEmail !== undefined) updateData.enableEmail = body.enableEmail
+    if (body.enableDrawAlerts !== undefined) updateData.enableDrawAlerts = body.enableDrawAlerts
+    if (body.enablePnpAlerts !== undefined) updateData.enablePnpAlerts = body.enablePnpAlerts
+    if (body.enableNewsAlerts !== undefined) updateData.enableNewsAlerts = body.enableNewsAlerts
 
     const settings = await prisma.settings.upsert({
-      where: { id: "default" },
+      where: { userId: session.id },
       update: updateData,
-      create: {
-        id: "default",
-        ...updateData,
-      },
+      create: { userId: session.id, ...updateData },
     })
 
     return NextResponse.json({
@@ -89,9 +70,6 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error("Error updating settings:", error)
-    return NextResponse.json(
-      { error: "Failed to update settings" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to update settings" }, { status: 500 })
   }
 }

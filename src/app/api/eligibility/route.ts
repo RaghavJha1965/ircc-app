@@ -2,18 +2,24 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { calculateCRS, type CrsProfile } from "@/lib/crs-calculator"
 import { checkEligibility } from "@/lib/program-eligibility"
+import { getSession } from "@/lib/auth"
 
 export const dynamic = "force-dynamic"
 
 export async function GET() {
   try {
+    const session = await getSession()
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
     let profile = await prisma.crsProfile.findUnique({
-      where: { id: "default" },
+      where: { userId: session.id },
     })
 
     if (!profile) {
       profile = await prisma.crsProfile.create({
-        data: { id: "default" },
+        data: { userId: session.id },
       })
     }
 
@@ -57,9 +63,6 @@ export async function GET() {
     })
   } catch (error) {
     console.error("Error checking eligibility:", error)
-    return NextResponse.json(
-      { error: "Failed to check eligibility" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to check eligibility" }, { status: 500 })
   }
 }

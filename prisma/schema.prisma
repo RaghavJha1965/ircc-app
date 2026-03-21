@@ -6,12 +6,25 @@ datasource db {
   provider = "sqlite"
 }
 
-// Express Entry Draws
+// User accounts
+model User {
+  id            String   @id @default(cuid())
+  name          String
+  email         String   @unique
+  passwordHash  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  profile       CrsProfile?
+  settings      Settings?
+  documents     Document[]
+}
+
+// Express Entry Draws (shared, not user-scoped)
 model Draw {
   id             String   @id @default(cuid())
   drawNumber     Int      @unique
   drawDate       DateTime
-  drawName       String   // e.g., "No program specified", "Canadian Experience Class", etc.
+  drawName       String
   crsScore       Int
   itasIssued     Int
   tieBreakDate   DateTime?
@@ -22,12 +35,12 @@ model Draw {
 // Provincial Nominee Program Draws
 model PnpDraw {
   id           String   @id @default(cuid())
-  province     String   // ON, BC, AB, etc.
-  stream       String   // e.g., "Human Capital Priorities", "Tech Draw"
+  province     String
+  stream       String
   drawDate     DateTime
   minScore     Int?
   itasIssued   Int?
-  nocCodes     String?  // Comma-separated NOC codes if applicable
+  nocCodes     String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -39,15 +52,17 @@ model News {
   summary     String?
   url         String
   publishDate DateTime
-  category    String?  // processing-times, policy-change, draw-announcement
+  category    String?
   createdAt   DateTime @default(now())
 }
 
-// Document Checklist Items
+// Document Checklist Items (user-scoped)
 model Document {
   id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   name        String
-  category    String   // education, language, work, identity, police-medical
+  category    String
   description String?
   isCompleted Boolean  @default(false)
   dueDate     DateTime?
@@ -56,46 +71,50 @@ model Document {
   updatedAt   DateTime @updatedAt
 }
 
-// User Settings (single user, no auth)
+// User Settings (user-scoped)
 model Settings {
-  id                   String  @id @default("default")
+  id                   String  @id @default(cuid())
+  userId               String  @unique
+  user                 User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   telegramBotToken     String?
   telegramChatId       String?
   emailAddress         String?
   crsAlertThreshold    Int     @default(500)
   enableTelegram       Boolean @default(false)
-  enableEmail          Boolean @default(false)
+  enableEmail          Boolean @default(true)
   enableDrawAlerts     Boolean @default(true)
   enablePnpAlerts      Boolean @default(true)
   enableNewsAlerts     Boolean @default(false)
 }
 
-// CRS Profile (saved user profile for calculations)
+// CRS Profile (user-scoped)
 model CrsProfile {
-  id                    String  @id @default("default")
+  id                    String  @id @default(cuid())
+  userId                String  @unique
+  user                  User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   // Core Human Capital Factors
   age                   Int     @default(25)
   educationLevel        String  @default("bachelors")
   firstLanguageTest     String  @default("ielts")
-  firstLanguageScores   String  @default("{}") // JSON: {reading: 8, writing: 7, listening: 8, speaking: 7}
-  secondLanguageScores  String? // JSON format
+  firstLanguageScores   String  @default("{}")
+  secondLanguageScores  String?
   canadianWorkYears     Int     @default(0)
   foreignWorkYears      Int     @default(0)
   // Spouse Factors
   hasSpouse             Boolean @default(false)
   spouseEducation       String?
-  spouseLanguageScores  String? // JSON
+  spouseLanguageScores  String?
   spouseCanadianWork    Int     @default(0)
   // Additional Points
   provincialNomination  Boolean @default(false)
-  jobOffer              String? // "00", "0ab", "other", null
-  canadianEducation     String? // "1-2years", "3+years", null
-  frenchAbility         String? // "clb7+", "clb7+withEnglish5+", null
+  jobOffer              String?
+  canadianEducation     String?
+  frenchAbility         String?
   sibling               Boolean @default(false)
   // Program eligibility fields
   nocCode               String?
-  nocTeerCategory       String?  // 0, 1, 2, 3, 4, 5
-  preferredProvinces    String?  // JSON array e.g. ["ON","BC"]
+  nocTeerCategory       String?
+  preferredProvinces    String?
   // Important dates for timeline tracking
   ieltsTestDate         DateTime?
   medicalExamDate       DateTime?

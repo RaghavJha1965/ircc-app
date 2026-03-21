@@ -45,8 +45,9 @@ export async function GET(request: NextRequest) {
 
     // Calculate statistics
     const allDraws = await prisma.draw.findMany()
+    type DrawRow = (typeof allDraws)[number]
     const stats = calculateDrawStats(
-      allDraws.map((d) => ({
+      allDraws.map((d: DrawRow) => ({
         drawNumber: d.drawNumber,
         drawDate: d.drawDate,
         drawName: d.drawName,

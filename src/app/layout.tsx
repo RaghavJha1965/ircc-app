@@ -38,30 +38,35 @@ export default async function RootLayout({
                   <span className="font-bold text-xl text-primary">IRCC Tracker</span>
                 </Link>
               </div>
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-2 sm:gap-4 md:gap-6 overflow-x-auto">
                 {session ? (
                   <>
-                    <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Link href="/" className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                       Dashboard
                     </Link>
-                    <Link href="/calculator" className="text-muted-foreground hover:text-foreground transition-colors">
-                      CRS Calculator
+                    <Link href="/calculator" className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
+                      CRS
                     </Link>
-                    <Link href="/eligibility" className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Link href="/eligibility" className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                       Eligibility
                     </Link>
-                    <Link href="/checklist" className="text-muted-foreground hover:text-foreground transition-colors">
-                      Documents
+                    <Link href="/checklist" className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
+                      Docs
                     </Link>
-                    <Link href="/settings" className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Link href="/settings" className="text-sm text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap">
                       Settings
                     </Link>
-                    <span className="text-sm text-muted-foreground">{session.name}</span>
-                    <LogoutButton />
+                    <div className="hidden sm:flex items-center gap-3 pl-3 border-l">
+                      <span className="text-sm text-muted-foreground">{session.name.split(" ")[0]}</span>
+                      <LogoutButton />
+                    </div>
+                    <div className="sm:hidden">
+                      <LogoutButton />
+                    </div>
                   </>
                 ) : (
                   <>
-                    <Link href="/login" className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Link href="/login" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
                       Sign In
                     </Link>
                     <Link
@@ -97,7 +102,7 @@ function LogoutButton() {
     >
       <button
         type="submit"
-        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        className="text-sm text-red-500 hover:text-red-600 transition-colors whitespace-nowrap"
       >
         Logout
       </button>

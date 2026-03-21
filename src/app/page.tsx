@@ -40,6 +40,10 @@ export default function Dashboard() {
       if (refresh) setRefreshing(true)
       const url = refresh ? "/api/draws?refresh=true" : "/api/draws"
       const response = await fetch(url)
+      if (response.status === 401) {
+        window.location.href = "/login"
+        return
+      }
       const json = await response.json()
       setData(json)
     } catch (error) {
@@ -217,8 +221,9 @@ export default function Dashboard() {
               ))}
               {(!data?.draws || data.draws.length === 0) && (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                    No draws found. Click &quot;Refresh Data&quot; to fetch the latest draws.
+                  <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                    <p className="text-lg font-medium mb-2">No draws yet</p>
+                    <p>Click &quot;Refresh Data&quot; above to fetch the latest Express Entry draws from IRCC.</p>
                   </TableCell>
                 </TableRow>
               )}

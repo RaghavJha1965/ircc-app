@@ -49,6 +49,15 @@ interface CrsBreakdown {
   total: number
 }
 
+interface Recommendation {
+  category: string
+  title: string
+  description: string
+  pointsGain: number
+  priority: string
+  difficulty: string
+}
+
 export default function CalculatorPage() {
   const [age, setAge] = useState(25)
   const [education, setEducation] = useState("bachelors-3plus")
@@ -66,15 +75,6 @@ export default function CalculatorPage() {
   const [canadianEducation, setCanadianEducation] = useState("")
   const [frenchAbility, setFrenchAbility] = useState("")
   const [sibling, setSibling] = useState(false)
-
-  interface Recommendation {
-    category: string
-    title: string
-    description: string
-    pointsGain: number
-    priority: string
-    difficulty: string
-  }
 
   const [breakdown, setBreakdown] = useState<CrsBreakdown | null>(null)
   const [recommendations, setRecommendations] = useState<Recommendation[]>([])

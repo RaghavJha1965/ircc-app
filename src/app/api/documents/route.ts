@@ -52,7 +52,7 @@ export async function GET() {
     }
 
     // Group by category
-    const grouped = documents.reduce((acc, doc) => {
+    const grouped = documents.reduce((acc: Record<string, typeof documents>, doc) => {
       if (!acc[doc.category]) {
         acc[doc.category] = []
       }

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const existingDraws = await prisma.draw.findMany({
       select: { drawNumber: true },
     })
-    const existingDrawNumbers = new Set(existingDraws.map((d) => d.drawNumber))
+    const existingDrawNumbers = new Set(existingDraws.map((d: { drawNumber: number }) => d.drawNumber))
 
     // 3. Find new draws that don't exist in database
     const newDraws = scrapedDraws.filter(

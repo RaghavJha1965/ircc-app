@@ -1,7 +1,5 @@
-import * as cheerio from "cheerio"
-
-const IRCC_DRAWS_URL =
-  "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/submit-profile/rounds-invitations.html"
+const IRCC_JSON_URL =
+  "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_4_en.json"
 
 export interface ExpressEntryDraw {
   drawNumber: number
@@ -21,91 +19,99 @@ export interface PnpDrawInfo {
   nocCodes?: string
 }
 
-// Fetch and parse Express Entry draws from IRCC website
+interface IRCCRound {
+  drawNumber: number | string
+  drawDateFull: string
+  drawName: string
+  drawCRS: number | string
+  drawSize: string
+  drawCutOff?: string
+}
+
+// Fetch Express Entry draws from IRCC JSON API
 export async function scrapeExpressEntryDraws(): Promise<ExpressEntryDraw[]> {
   try {
-    const response = await fetch(IRCC_DRAWS_URL, {
+    const response = await fetch(IRCC_JSON_URL, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        Accept: "application/json,text/html,*/*",
       },
-      next: { revalidate: 3600 }, // Cache for 1 hour
+      next: { revalidate: 3600 },
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch IRCC page: ${response.status}`)
+      throw new Error(`Failed to fetch IRCC data: ${response.status}`)
     }
 
-    const html = await response.text()
-    const $ = cheerio.load(html)
-
+    const data = await response.json()
+    const rounds: Record<string, IRCCRound> = data.rounds || {}
     const draws: ExpressEntryDraw[] = []
 
-    // The IRCC website has a table with draw information
-    // Table structure: Draw number, Date, Program, Invitations issued, CRS score, tie-breaking rule
-    $("table tbody tr").each((_, row) => {
-      const cells = $(row).find("td")
-      if (cells.length >= 5) {
-        const drawNumberText = $(cells[0]).text().trim()
-        const drawNumber = parseInt(drawNumberText.replace(/[^\d]/g, ""), 10)
+    for (const key of Object.keys(rounds)) {
+      const round = rounds[key]
 
-        const dateText = $(cells[1]).text().trim()
-        const drawDate = parseIRCCDate(dateText)
+      const drawNumber = typeof round.drawNumber === "string"
+        ? parseInt(round.drawNumber, 10)
+        : round.drawNumber
 
-        const drawName = $(cells[2]).text().trim() || "No program specified"
+      const crsScore = typeof round.drawCRS === "string"
+        ? parseInt(round.drawCRS.replace(/[^\d]/g, ""), 10)
+        : round.drawCRS
 
-        const itasText = $(cells[3]).text().trim()
-        const itasIssued = parseInt(itasText.replace(/[^\d]/g, ""), 10) || 0
+      const itasIssued = parseInt(
+        String(round.drawSize).replace(/[^\d]/g, ""),
+        10
+      ) || 0
 
-        const crsText = $(cells[4]).text().trim()
-        const crsScore = parseInt(crsText.replace(/[^\d]/g, ""), 10) || 0
+      const drawDate = parseIRCCDate(round.drawDateFull)
 
-        // Tie-breaking date (if available)
-        let tieBreakDate: Date | undefined
-        if (cells.length > 5) {
-          const tieBreakText = $(cells[5]).text().trim()
-          if (tieBreakText && !tieBreakText.toLowerCase().includes("n/a")) {
-            tieBreakDate = parseIRCCDate(tieBreakText)
-          }
-        }
-
-        if (drawNumber && crsScore) {
-          draws.push({
-            drawNumber,
-            drawDate,
-            drawName,
-            crsScore,
-            itasIssued,
-            tieBreakDate,
-          })
+      let tieBreakDate: Date | undefined
+      if (round.drawCutOff && !round.drawCutOff.toLowerCase().includes("n/a")) {
+        const parsed = parseIRCCDate(round.drawCutOff)
+        if (parsed.getTime() !== new Date().getTime()) {
+          tieBreakDate = parsed
         }
       }
-    })
+
+      if (drawNumber && crsScore) {
+        draws.push({
+          drawNumber,
+          drawDate,
+          drawName: round.drawName || "No program specified",
+          crsScore,
+          itasIssued,
+          tieBreakDate,
+        })
+      }
+    }
+
+    // Sort by draw number descending
+    draws.sort((a, b) => b.drawNumber - a.drawNumber)
 
     return draws
   } catch (error) {
-    console.error("Error scraping Express Entry draws:", error)
+    console.error("Error fetching Express Entry draws:", error)
     throw error
   }
 }
 
-// Parse IRCC date formats like "January 10, 2024" or "2024-01-10"
+// Parse IRCC date formats like "March 18, 2026" or "2024-01-10"
 function parseIRCCDate(dateText: string): Date {
-  // Try parsing ISO format first
+  if (!dateText) return new Date()
+
+  // Try ISO format
   const isoDate = new Date(dateText)
   if (!isNaN(isoDate.getTime())) {
     return isoDate
   }
 
-  // Try parsing "Month DD, YYYY" format
-  const monthMatch = dateText.match(
-    /(\w+)\s+(\d{1,2}),?\s+(\d{4})/i
-  )
+  // Try "Month DD, YYYY" format
+  const monthMatch = dateText.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/i)
   if (monthMatch) {
     const monthNames = [
       "january", "february", "march", "april", "may", "june",
-      "july", "august", "september", "october", "november", "december"
+      "july", "august", "september", "october", "november", "december",
     ]
     const monthIndex = monthNames.indexOf(monthMatch[1].toLowerCase())
     if (monthIndex !== -1) {
@@ -117,17 +123,13 @@ function parseIRCCDate(dateText: string): Date {
     }
   }
 
-  // Default to current date if parsing fails
   return new Date()
 }
 
-// Get the latest draw from the scraped data
+// Get the latest draw
 export async function getLatestDraw(): Promise<ExpressEntryDraw | null> {
   const draws = await scrapeExpressEntryDraws()
-  if (draws.length === 0) return null
-
-  // Sort by draw number descending and return the first
-  return draws.sort((a, b) => b.drawNumber - a.drawNumber)[0]
+  return draws.length > 0 ? draws[0] : null
 }
 
 // Calculate statistics from draws
@@ -164,10 +166,6 @@ export function calculateDrawStats(draws: ExpressEntryDraw[]) {
   }
 }
 
-// OINP scraper (simplified - OINP doesn't have a public API)
-// You may need to adjust based on the actual website structure
 export async function scrapeOINPDraws(): Promise<PnpDrawInfo[]> {
-  // OINP website structure changes frequently
-  // For now, return empty array - can be implemented when needed
   return []
 }

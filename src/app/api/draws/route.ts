@@ -11,38 +11,30 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get("limit") || "20", 10)
   const refresh = searchParams.get("refresh") === "true"
 
+  let refreshFailed = false
+
   try {
     if (refresh) {
-      const scrapedDraws = await scrapeExpressEntryDraws()
+      try {
+        const scrapedDraws = await scrapeExpressEntryDraws()
 
-      // Get existing draw numbers to only insert new ones
-      const existing = await prisma.draw.findMany({
-        select: { drawNumber: true },
-      })
-      const existingNumbers = new Set(existing.map((d: { drawNumber: number }) => d.drawNumber))
-
-      // Only insert draws we don't have yet (max 10 at a time)
-      const newDraws = scrapedDraws
-        .filter((d) => !existingNumbers.has(d.drawNumber))
-        .slice(0, 10)
-
-      for (const draw of newDraws) {
-        await prisma.draw.create({
-          data: {
-            drawNumber: draw.drawNumber,
-            drawDate: draw.drawDate,
-            drawName: draw.drawName,
-            crsScore: draw.crsScore,
-            itasIssued: draw.itasIssued,
-            tieBreakDate: draw.tieBreakDate,
-          },
+        const existing = await prisma.draw.findMany({
+          select: { drawNumber: true },
         })
-      }
+        const existingNumbers = new Set(
+          existing.map((d: { drawNumber: number }) => d.drawNumber)
+        )
 
-      // If DB was empty, also add some historical draws
-      if (existing.length === 0 && scrapedDraws.length > 10) {
-        const historical = scrapedDraws.slice(10, 20)
-        for (const draw of historical) {
+        const newDraws = scrapedDraws
+          .filter((d) => !existingNumbers.has(d.drawNumber))
+          .slice(0, 10)
+
+        const toCreate =
+          existing.length === 0 && scrapedDraws.length > 10
+            ? [...newDraws, ...scrapedDraws.slice(10, 20)]
+            : newDraws
+
+        for (const draw of toCreate) {
           await prisma.draw.create({
             data: {
               drawNumber: draw.drawNumber,
@@ -54,6 +46,9 @@ export async function GET(request: NextRequest) {
             },
           })
         }
+      } catch (err) {
+        console.error("Draw refresh from IRCC failed:", err)
+        refreshFailed = true
       }
     }
 
@@ -81,6 +76,7 @@ export async function GET(request: NextRequest) {
       draws,
       stats,
       count: draws.length,
+      ...(refresh ? { refreshFailed } : {}),
     })
   } catch (error) {
     console.error("Error fetching draws:", error)

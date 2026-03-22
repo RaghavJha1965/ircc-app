@@ -1,6 +1,13 @@
 const IRCC_JSON_URL =
   "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_4_en.json"
 
+/** Keep under Vercel Hobby's 10s function limit; override via IRCC_FETCH_TIMEOUT_MS */
+function irccFetchTimeoutMs(): number {
+  const raw = parseInt(process.env.IRCC_FETCH_TIMEOUT_MS || "", 10)
+  if (Number.isFinite(raw) && raw >= 2000) return Math.min(raw, 55000)
+  return 7000
+}
+
 export interface ExpressEntryDraw {
   drawNumber: number
   drawDate: Date
@@ -32,6 +39,7 @@ interface IRCCRound {
 export async function scrapeExpressEntryDraws(): Promise<ExpressEntryDraw[]> {
   try {
     const response = await fetch(IRCC_JSON_URL, {
+      signal: AbortSignal.timeout(irccFetchTimeoutMs()),
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

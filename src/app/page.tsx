@@ -28,6 +28,7 @@ interface DrawsResponse {
   draws: Draw[]
   stats: Stats
   count: number
+  refreshFailed?: boolean
 }
 
 export default function Dashboard() {
@@ -87,6 +88,11 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">
             Track CRS scores and Express Entry draws in real-time
           </p>
+          {data?.refreshFailed && (
+            <p className="text-sm text-amber-600 dark:text-amber-500 mt-2" role="status">
+              Could not reach IRCC to refresh. Showing saved data — try again in a moment.
+            </p>
+          )}
         </div>
         <Button
           onClick={() => fetchDraws(true)}

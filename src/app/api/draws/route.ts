@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { scrapeExpressEntryDraws, calculateDrawStats } from "@/lib/scraper"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 30
 
 // GET /api/draws - Get all draws from database
 export async function GET(request: NextRequest) {
@@ -15,7 +16,10 @@ export async function GET(request: NextRequest) {
     if (refresh) {
       const scrapedDraws = await scrapeExpressEntryDraws()
 
-      for (const draw of scrapedDraws) {
+      // Only upsert the latest 30 draws to avoid timeout
+      const recentDraws = scrapedDraws.slice(0, 30)
+
+      for (const draw of recentDraws) {
         await prisma.draw.upsert({
           where: { drawNumber: draw.drawNumber },
           update: {

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db"
 import { scrapeExpressEntryDraws, calculateDrawStats } from "@/lib/scraper"
 
 export const dynamic = "force-dynamic"
-export const maxDuration = 30
+export const maxDuration = 60
 
 // GET /api/draws - Get all draws from database
 export async function GET(request: NextRequest) {
@@ -12,24 +12,23 @@ export async function GET(request: NextRequest) {
   const refresh = searchParams.get("refresh") === "true"
 
   try {
-    // If refresh is requested, scrape and update the database
     if (refresh) {
       const scrapedDraws = await scrapeExpressEntryDraws()
 
-      // Only upsert the latest 30 draws to avoid timeout
-      const recentDraws = scrapedDraws.slice(0, 30)
+      // Get existing draw numbers to only insert new ones
+      const existing = await prisma.draw.findMany({
+        select: { drawNumber: true },
+      })
+      const existingNumbers = new Set(existing.map((d: { drawNumber: number }) => d.drawNumber))
 
-      for (const draw of recentDraws) {
-        await prisma.draw.upsert({
-          where: { drawNumber: draw.drawNumber },
-          update: {
-            drawDate: draw.drawDate,
-            drawName: draw.drawName,
-            crsScore: draw.crsScore,
-            itasIssued: draw.itasIssued,
-            tieBreakDate: draw.tieBreakDate,
-          },
-          create: {
+      // Only insert draws we don't have yet (max 10 at a time)
+      const newDraws = scrapedDraws
+        .filter((d) => !existingNumbers.has(d.drawNumber))
+        .slice(0, 10)
+
+      for (const draw of newDraws) {
+        await prisma.draw.create({
+          data: {
             drawNumber: draw.drawNumber,
             drawDate: draw.drawDate,
             drawName: draw.drawName,
@@ -39,6 +38,23 @@ export async function GET(request: NextRequest) {
           },
         })
       }
+
+      // If DB was empty, also add some historical draws
+      if (existing.length === 0 && scrapedDraws.length > 10) {
+        const historical = scrapedDraws.slice(10, 20)
+        for (const draw of historical) {
+          await prisma.draw.create({
+            data: {
+              drawNumber: draw.drawNumber,
+              drawDate: draw.drawDate,
+              drawName: draw.drawName,
+              crsScore: draw.crsScore,
+              itasIssued: draw.itasIssued,
+              tieBreakDate: draw.tieBreakDate,
+            },
+          })
+        }
+      }
     }
 
     // Get draws from database
@@ -47,7 +63,7 @@ export async function GET(request: NextRequest) {
       take: limit,
     })
 
-    // Calculate statistics
+    // Calculate statistics from what we have
     const allDraws = await prisma.draw.findMany()
     type DrawRow = (typeof allDraws)[number]
     const stats = calculateDrawStats(

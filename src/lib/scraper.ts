@@ -1,3 +1,7 @@
+import * as dns from "node:dns"
+import * as https from "node:https"
+import { URL } from "node:url"
+
 const IRCC_JSON_URL =
   "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_4_en.json"
 
@@ -5,7 +9,72 @@ const IRCC_JSON_URL =
 function irccFetchTimeoutMs(): number {
   const raw = parseInt(process.env.IRCC_FETCH_TIMEOUT_MS || "", 10)
   if (Number.isFinite(raw) && raw >= 2000) return Math.min(raw, 55000)
-  return 7000
+  return 8500
+}
+
+/**
+ * IRCC sits behind Akamai; Node's fetch (HTTP/2) and IPv6-first resolution sometimes
+ * stall or error from cloud hosts. Use HTTP/1.1 + IPv4 for a more reliable path.
+ */
+function fetchIrccJsonText(timeoutMs: number): Promise<string> {
+  const target = new URL(IRCC_JSON_URL)
+  return new Promise((resolve, reject) => {
+    let done = false
+    const finish = (fn: () => void) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      fn()
+    }
+
+    const timer = setTimeout(() => {
+      req.destroy()
+      finish(() => reject(new Error(`IRCC fetch timed out after ${timeoutMs}ms`)))
+    }, timeoutMs)
+
+    const req = https.request(
+      {
+        hostname: target.hostname,
+        port: 443,
+        path: target.pathname + target.search,
+        method: "GET",
+        servername: target.hostname,
+        lookup: (hostname, _opts, cb) => {
+          dns.lookup(hostname, { family: 4 }, cb)
+        },
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept: "application/json,text/plain,*/*",
+          "Accept-Encoding": "identity",
+          Connection: "close",
+        },
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume()
+          finish(() =>
+            reject(new Error(`Failed to fetch IRCC data: ${res.statusCode}`))
+          )
+          return
+        }
+        const chunks: Buffer[] = []
+        res.on("data", (chunk) => chunks.push(chunk))
+        res.on("end", () => {
+          finish(() => resolve(Buffer.concat(chunks).toString("utf8")))
+        })
+        res.on("error", (err) => {
+          finish(() => reject(err))
+        })
+      }
+    )
+
+    req.on("error", (err) => {
+      finish(() => reject(err))
+    })
+
+    req.end()
+  })
 }
 
 export interface ExpressEntryDraw {
@@ -38,21 +107,8 @@ interface IRCCRound {
 // Fetch Express Entry draws from IRCC JSON API
 export async function scrapeExpressEntryDraws(): Promise<ExpressEntryDraw[]> {
   try {
-    const response = await fetch(IRCC_JSON_URL, {
-      signal: AbortSignal.timeout(irccFetchTimeoutMs()),
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept: "application/json,text/html,*/*",
-      },
-      cache: "no-store",
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch IRCC data: ${response.status}`)
-    }
-
-    const data = await response.json()
+    const text = await fetchIrccJsonText(irccFetchTimeoutMs())
+    const data = JSON.parse(text) as { rounds?: Record<string, IRCCRound> }
     const rounds: Record<string, IRCCRound> = data.rounds || {}
     const draws: ExpressEntryDraw[] = []
 

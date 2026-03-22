@@ -12,11 +12,18 @@ export async function GET(request: NextRequest) {
   const refresh = searchParams.get("refresh") === "true"
 
   let refreshFailed = false
+  let usingBundledSnapshot = false
 
   try {
-    if (refresh) {
+    const drawCount = await prisma.draw.count()
+    const shouldSync = refresh || drawCount === 0
+
+    if (shouldSync) {
       try {
-        const scrapedDraws = await scrapeExpressEntryDraws()
+        const { draws: scrapedDraws, source } = await scrapeExpressEntryDraws({
+          allowFallback: true,
+        })
+        usingBundledSnapshot = source !== "live"
 
         const existing = await prisma.draw.findMany({
           select: { drawNumber: true },
@@ -47,7 +54,7 @@ export async function GET(request: NextRequest) {
           })
         }
       } catch (err) {
-        console.error("Draw refresh from IRCC failed:", err)
+        console.error("Draw sync from IRCC failed:", err)
         refreshFailed = true
       }
     }
@@ -76,7 +83,9 @@ export async function GET(request: NextRequest) {
       draws,
       stats,
       count: draws.length,
-      ...(refresh ? { refreshFailed } : {}),
+      ...(shouldSync
+        ? { refreshFailed, usingBundledSnapshot }
+        : {}),
     })
   } catch (error) {
     console.error("Error fetching draws:", error)

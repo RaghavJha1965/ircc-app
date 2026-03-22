@@ -1,6 +1,9 @@
-import * as dns from "node:dns"
+import * as fs from "node:fs"
 import * as https from "node:https"
+import * as path from "node:path"
 import { URL } from "node:url"
+
+import fallbackPayload from "@/data/ircc-ee-rounds-fallback.json"
 
 const IRCC_JSON_URL =
   "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_4_en.json"
@@ -39,9 +42,6 @@ function fetchIrccJsonText(timeoutMs: number): Promise<string> {
         path: target.pathname + target.search,
         method: "GET",
         servername: target.hostname,
-        lookup: (hostname, _opts, cb) => {
-          dns.lookup(hostname, { family: 4 }, cb)
-        },
         headers: {
           "User-Agent":
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -104,60 +104,169 @@ interface IRCCRound {
   drawCutOff?: string
 }
 
-// Fetch Express Entry draws from IRCC JSON API
-export async function scrapeExpressEntryDraws(): Promise<ExpressEntryDraw[]> {
-  try {
-    const text = await fetchIrccJsonText(irccFetchTimeoutMs())
-    const data = JSON.parse(text) as { rounds?: Record<string, IRCCRound> }
-    const rounds: Record<string, IRCCRound> = data.rounds || {}
-    const draws: ExpressEntryDraw[] = []
+/** live = canada.ca JSON; static = your deployment or DRAWS_JSON_URLS; fallback = bundled import */
+export type ScrapeSource = "live" | "static" | "fallback"
 
-    for (const key of Object.keys(rounds)) {
-      const round = rounds[key]
+export interface ScrapeExpressEntryResult {
+  draws: ExpressEntryDraw[]
+  source: ScrapeSource
+}
 
-      const drawNumber = typeof round.drawNumber === "string"
-        ? parseInt(round.drawNumber, 10)
-        : round.drawNumber
+function parseIrccRoundsPayload(data: {
+  rounds?: Record<string, IRCCRound>
+}): ExpressEntryDraw[] {
+  const rounds: Record<string, IRCCRound> = data.rounds || {}
+  const draws: ExpressEntryDraw[] = []
 
-      const crsScore = typeof round.drawCRS === "string"
-        ? parseInt(round.drawCRS.replace(/[^\d]/g, ""), 10)
-        : round.drawCRS
+  for (const key of Object.keys(rounds)) {
+    const round = rounds[key]
 
-      const itasIssued = parseInt(
-        String(round.drawSize).replace(/[^\d]/g, ""),
-        10
-      ) || 0
+    const drawNumber = typeof round.drawNumber === "string"
+      ? parseInt(round.drawNumber, 10)
+      : round.drawNumber
 
-      const drawDate = parseIRCCDate(round.drawDateFull)
+    const crsScore = typeof round.drawCRS === "string"
+      ? parseInt(round.drawCRS.replace(/[^\d]/g, ""), 10)
+      : round.drawCRS
 
-      let tieBreakDate: Date | undefined
-      if (round.drawCutOff && !round.drawCutOff.toLowerCase().includes("n/a")) {
-        const parsed = parseIRCCDate(round.drawCutOff)
-        if (parsed.getTime() !== new Date().getTime()) {
-          tieBreakDate = parsed
-        }
-      }
+    const itasIssued =
+      parseInt(String(round.drawSize).replace(/[^\d]/g, ""), 10) || 0
 
-      if (drawNumber && crsScore) {
-        draws.push({
-          drawNumber,
-          drawDate,
-          drawName: round.drawName || "No program specified",
-          crsScore,
-          itasIssued,
-          tieBreakDate,
-        })
+    const drawDate = parseIRCCDate(round.drawDateFull)
+
+    let tieBreakDate: Date | undefined
+    if (round.drawCutOff && !round.drawCutOff.toLowerCase().includes("n/a")) {
+      const parsed = parseIRCCDate(round.drawCutOff)
+      if (parsed.getTime() !== new Date().getTime()) {
+        tieBreakDate = parsed
       }
     }
 
-    // Sort by draw number descending
-    draws.sort((a, b) => b.drawNumber - a.drawNumber)
-
-    return draws
-  } catch (error) {
-    console.error("Error fetching Express Entry draws:", error)
-    throw error
+    if (drawNumber && crsScore) {
+      draws.push({
+        drawNumber,
+        drawDate,
+        drawName: round.drawName || "No program specified",
+        crsScore,
+        itasIssued,
+        tieBreakDate,
+      })
+    }
   }
+
+  draws.sort((a, b) => b.drawNumber - a.drawNumber)
+  return draws
+}
+
+/** Fast fetch for mirrors (GitHub raw, same-origin static on Vercel, etc.) — works well on Hobby. */
+async function fetchDrawsJsonUrl(url: string, timeoutMs: number): Promise<string> {
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      Accept: "application/json,text/plain,*/*",
+      "User-Agent":
+        "Mozilla/5.0 (compatible; IRCC-Tracker/1.0; +https://vercel.com)",
+    },
+    cache: "no-store",
+  })
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} for ${url}`)
+  }
+  const text = await res.text()
+  if (!text.includes('"rounds"')) {
+    throw new Error(`No rounds in response from ${url}`)
+  }
+  return text
+}
+
+/** Same file as static URL https://<VERCEL_URL>/draws/ee-rounds.json — read from disk when present (local dev; sometimes on server). */
+function tryReadPublicDrawsFile(): string | null {
+  try {
+    const filePath = path.join(
+      process.cwd(),
+      "public",
+      "draws",
+      "ee-rounds.json"
+    )
+    if (!fs.existsSync(filePath)) return null
+    const text = fs.readFileSync(filePath, "utf8")
+    return text.includes('"rounds"') ? text : null
+  } catch {
+    return null
+  }
+}
+
+function mirrorUrlsForHobby(): string[] {
+  const urls: string[] = []
+  const fromEnv = process.env.DRAWS_JSON_URLS?.split(/[\s,]+/).filter(Boolean) ?? []
+  urls.push(...fromEnv)
+  const vercel = process.env.VERCEL_URL
+  if (vercel) {
+    urls.push(`https://${vercel}/draws/ee-rounds.json`)
+  }
+  return [...new Set(urls)]
+}
+
+async function firstMirrorJson(timeoutMs: number): Promise<string> {
+  const urls = mirrorUrlsForHobby()
+  if (urls.length === 0) {
+    throw new Error("No mirror URLs configured")
+  }
+  return Promise.any(urls.map((url) => fetchDrawsJsonUrl(url, timeoutMs)))
+}
+
+export async function scrapeExpressEntryDraws(options?: {
+  allowFallback?: boolean
+}): Promise<ScrapeExpressEntryResult> {
+  const allowFallback = options?.allowFallback !== false
+
+  if (!allowFallback) {
+    const text = await fetchIrccJsonText(irccFetchTimeoutMs())
+    const draws = parseIrccRoundsPayload(
+      JSON.parse(text) as { rounds?: Record<string, IRCCRound> }
+    )
+    return { draws, source: "live" }
+  }
+
+  // 1) Local static file (npm run dev — no VERCEL_URL needed)
+  const localText = tryReadPublicDrawsFile()
+  if (localText) {
+    const draws = parseIrccRoundsPayload(
+      JSON.parse(localText) as { rounds?: Record<string, IRCCRound> }
+    )
+    return { draws, source: "static" }
+  }
+
+  // 2) Same JSON over HTTPS: DRAWS_JSON_URLS + https://<VERCEL_URL>/draws/ee-rounds.json
+  try {
+    const text = await firstMirrorJson(3500)
+    const draws = parseIrccRoundsPayload(
+      JSON.parse(text) as { rounds?: Record<string, IRCCRound> }
+    )
+    return { draws, source: "static" }
+  } catch {
+    /* try IRCC */
+  }
+
+  // 3) Official IRCC (often slow from datacenters; keep bounded for Hobby)
+  try {
+    const text = await fetchIrccJsonText(Math.min(irccFetchTimeoutMs(), 6000))
+    const draws = parseIrccRoundsPayload(
+      JSON.parse(text) as { rounds?: Record<string, IRCCRound> }
+    )
+    return { draws, source: "live" }
+  } catch (error) {
+    console.error("IRCC live JSON fetch/parse failed:", error)
+  }
+
+  // 4) Bundled (always works, no network)
+  console.warn(
+    "Using bundled IRCC rounds fallback (update public/draws/ee-rounds.json and src/data/ircc-ee-rounds-fallback.json periodically)"
+  )
+  const draws = parseIrccRoundsPayload(
+    fallbackPayload as { rounds?: Record<string, IRCCRound> }
+  )
+  return { draws, source: "fallback" }
 }
 
 // Parse IRCC date formats like "March 18, 2026" or "2024-01-10"
@@ -192,7 +301,7 @@ function parseIRCCDate(dateText: string): Date {
 
 // Get the latest draw
 export async function getLatestDraw(): Promise<ExpressEntryDraw | null> {
-  const draws = await scrapeExpressEntryDraws()
+  const { draws } = await scrapeExpressEntryDraws()
   return draws.length > 0 ? draws[0] : null
 }
 

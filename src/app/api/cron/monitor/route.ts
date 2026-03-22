@@ -23,8 +23,10 @@ export async function GET(request: NextRequest) {
   try {
     console.log("[CRON] Starting Express Entry monitor...")
 
-    // 1. Scrape latest draws
-    const scrapedDraws = await scrapeExpressEntryDraws()
+    // 1. Scrape latest draws (live only — do not notify from bundled fallback)
+    const { draws: scrapedDraws } = await scrapeExpressEntryDraws({
+      allowFallback: false,
+    })
 
     if (scrapedDraws.length === 0) {
       console.log("[CRON] No draws scraped")

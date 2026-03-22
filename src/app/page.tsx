@@ -29,6 +29,7 @@ interface DrawsResponse {
   stats: Stats
   count: number
   refreshFailed?: boolean
+  usingBundledSnapshot?: boolean
 }
 
 export default function Dashboard() {
@@ -90,7 +91,14 @@ export default function Dashboard() {
           </p>
           {data?.refreshFailed && (
             <p className="text-sm text-amber-600 dark:text-amber-500 mt-2" role="status">
-              Could not reach IRCC to refresh. Showing saved data — try again in a moment.
+              Could not load draw data from IRCC or the offline snapshot. Try again in a moment.
+            </p>
+          )}
+          {data?.usingBundledSnapshot && !data?.refreshFailed && (
+            <p className="text-sm text-muted-foreground mt-2" role="status">
+              Draws are from the app&apos;s static JSON or a mirror URL, not a live pull from canada.ca. Update{" "}
+              <code className="text-xs bg-muted px-1 rounded">public/draws/ee-rounds.json</code> or set{" "}
+              <code className="text-xs bg-muted px-1 rounded">DRAWS_JSON_URLS</code> for fresher data on Hobby.
             </p>
           )}
         </div>
@@ -229,7 +237,10 @@ export default function Dashboard() {
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
                     <p className="text-lg font-medium mb-2">No draws yet</p>
-                    <p>Click &quot;Refresh Data&quot; above to fetch the latest Express Entry draws from IRCC.</p>
+                    <p>
+                      The app loads draws automatically on first visit. If this stays empty, use
+                      &quot;Refresh Data&quot; or try again later — the IRCC feed may be slow from the server.
+                    </p>
                   </TableCell>
                 </TableRow>
               )}

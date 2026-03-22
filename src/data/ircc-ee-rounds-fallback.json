@@ -1,0 +1,126 @@
+{
+  "rounds": {
+    "404": {
+      "drawNumber": 404,
+      "drawDateFull": "March 17, 2026",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 521,
+      "drawSize": "4,000",
+      "drawCutOff": "June 24, 2025 at 14:30:42 UTC"
+    },
+    "403": {
+      "drawNumber": 403,
+      "drawDateFull": "March 3, 2026",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 508,
+      "drawSize": "4,000",
+      "drawCutOff": "June 24, 2025 at 22:35:48 UTC"
+    },
+    "402": {
+      "drawNumber": 402,
+      "drawDateFull": "February 17, 2026",
+      "drawName": "Provincial Nominee Program",
+      "drawCRS": 726,
+      "drawSize": "500",
+      "drawCutOff": "February 10, 2026 at 15:22:18 UTC"
+    },
+    "401": {
+      "drawNumber": 401,
+      "drawDateFull": "February 4, 2026",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 521,
+      "drawSize": "4,000",
+      "drawCutOff": "June 23, 2025 at 19:01:42 UTC"
+    },
+    "400": {
+      "drawNumber": 400,
+      "drawDateFull": "January 20, 2026",
+      "drawName": "French language proficiency",
+      "drawCRS": 428,
+      "drawSize": "5,500",
+      "drawCutOff": "June 8, 2025 at 13:56:04 UTC"
+    },
+    "399": {
+      "drawNumber": 399,
+      "drawDateFull": "January 8, 2026",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 542,
+      "drawSize": "4,000",
+      "drawCutOff": "June 22, 2025 at 20:53:41 UTC"
+    },
+    "398": {
+      "drawNumber": 398,
+      "drawDateFull": "December 15, 2025",
+      "drawName": "Provincial Nominee Program",
+      "drawCRS": 685,
+      "drawSize": "1,000",
+      "drawCutOff": "December 8, 2025 at 09:12:00 UTC"
+    },
+    "397": {
+      "drawNumber": 397,
+      "drawDateFull": "December 2, 2025",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 529,
+      "drawSize": "4,000",
+      "drawCutOff": "June 21, 2025 at 16:44:59 UTC"
+    },
+    "396": {
+      "drawNumber": 396,
+      "drawDateFull": "November 17, 2025",
+      "drawName": "Healthcare occupations",
+      "drawCRS": 463,
+      "drawSize": "3,500",
+      "drawCutOff": "May 30, 2025 at 18:22:11 UTC"
+    },
+    "395": {
+      "drawNumber": 395,
+      "drawDateFull": "November 3, 2025",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 547,
+      "drawSize": "4,000",
+      "drawCutOff": "June 20, 2025 at 11:08:33 UTC"
+    },
+    "394": {
+      "drawNumber": 394,
+      "drawDateFull": "October 20, 2025",
+      "drawName": "French language proficiency",
+      "drawCRS": 444,
+      "drawSize": "4,000",
+      "drawCutOff": "June 7, 2025 at 09:41:27 UTC"
+    },
+    "393": {
+      "drawNumber": 393,
+      "drawDateFull": "October 6, 2025",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 539,
+      "drawSize": "4,000",
+      "drawCutOff": "June 19, 2025 at 14:17:52 UTC"
+    },
+    "392": {
+      "drawNumber": 392,
+      "drawDateFull": "September 22, 2025",
+      "drawName": "Provincial Nominee Program",
+      "drawCRS": 702,
+      "drawSize": "800",
+      "drawCutOff": "September 15, 2025 at 10:00:00 UTC"
+    },
+    "391": {
+      "drawNumber": 391,
+      "drawDateFull": "September 8, 2025",
+      "drawName": "Canadian Experience Class",
+      "drawCRS": 531,
+      "drawSize": "4,000",
+      "drawCutOff": "June 18, 2025 at 21:35:08 UTC"
+    },
+    "390": {
+      "drawNumber": 390,
+      "drawDateFull": "August 25, 2025",
+      "drawName": "STEM occupations",
+      "drawCRS": 491,
+      "drawSize": "3,000",
+      "drawCutOff": "May 28, 2025 at 12:09:44 UTC"
+    }
+  },
+  "_snapshotNote": "Bundled fallback when canada.ca JSON is unreachable from the server. Update rounds periodically from ee_rounds_4_en.json.",
+  "_snapshotDate": "2026-03-21"
+}
